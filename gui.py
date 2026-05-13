@@ -455,7 +455,7 @@ class NumericalShowdown(tk.Tk):
         ax.plot(xs, ys, color=ACCENT2, linewidth=1.8, label="f(x)")
         ax.axhline(0, color=BORDER, linewidth=0.8, linestyle="--")
 
-        for method, (root, iters, _, _) in self.results.items():
+        for method, (root, iters, _, _, _) in self.results.items():
             if root is None:
                 continue
             try:
@@ -489,11 +489,11 @@ class NumericalShowdown(tk.Tk):
         w("  " + "─" * 52 + "\n", "muted")
 
         min_iters = None
-        for m, (root, iters, _, _) in self.results.items():
+        for m, (root, iters, _, _, _) in self.results.items():
             if root is not None and (min_iters is None or iters < min_iters):
                 min_iters = iters
 
-        for method, (root, iters, history, ms) in self.results.items():
+        for method, (root, iters, history, _, ms) in self.results.items():
             w(f"\n  {method}\n", method)
             if root is None:
                 w(f"    ✗ Failed to converge\n", "fail")
