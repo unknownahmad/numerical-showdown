@@ -39,13 +39,15 @@ FONT_BODY   = ("Courier New", 10)
 FONT_MONO   = ("Courier New", 10)
 FONT_SMALL  = ("Courier New", 8)
 
+# Each preset: (display_name, expr, a, b, x0, x1, eps, alpha)
+# Parameters are: interval [a,b], initial guesses x0/x1, tolerance, fixed-point alpha
 PRESET_FUNCTIONS = [
-    ("x³ − x − 2",          "x**3 - x - 2"),
-    ("sin(x) − x/2",        "sin(x) - x/2"),
-    ("eˣ − 3x",             "exp(x) - 3*x"),
-    ("x² − 2 (√2 root)",   "x**2 - 2"),
-    ("cos(x) − x",          "cos(x) - x"),
-    ("Flat slope (Newton fails)", "x**3"),
+    ("x³ − x − 2",               "x**3 - x - 2",  "-2",   "2",   "1",    "1.5",  "1e-6", "-0.2"),
+    ("sin(x) − x/2",             "sin(x) - x/2",  "-3",   "3",   "2",    "2.5",  "1e-6", "-0.3"),
+    ("eˣ − 3x",                  "exp(x) - 3*x",  "0",    "2",   "1",    "1.5",  "1e-6", "-0.1"),
+    ("x² − 2  (√2 root)",        "x**2 - 2",      "0",    "2",   "1",    "1.5",  "1e-6", "-0.3"),
+    ("cos(x) − x",               "cos(x) - x",    "0",    "2",   "0.5",  "1",    "1e-6", "-0.5"),
+    ("Flat slope (Newton fails)", "x**3",          "-1",   "1",   "0.5",  "0.8",  "1e-6", "-0.5"),
 ]
 
 # ─────────────────────────────────────────────
@@ -81,8 +83,10 @@ def accent_btn(parent, text, cmd, color=None, **kw):
 def ghost_btn(parent, text, cmd, **kw):
     b = tk.Button(parent, text=text, command=cmd,
                   font=FONT_BODY, fg=TEXT_MUT, bg=CARD,
-                  activebackground=BORDER, relief="flat",
-                  cursor="hand2", padx=8, pady=4, **kw)
+                  activebackground=BORDER, activeforeground=TEXT,
+                  relief="flat", cursor="hand2", padx=8, pady=4, **kw)
+    b.bind("<Enter>", lambda _: b.config(fg=TEXT))
+    b.bind("<Leave>", lambda _: b.config(fg=TEXT_MUT))
     return b
 
 def _lighten(hex_color):
@@ -103,7 +107,7 @@ class NumericalShowdown(tk.Tk):
         self.configure(bg=BG)
         self.resizable(True, True)
 
-        self.results = {}          # method_name -> (root, iters, history, time_ms)
+        self.results = {}
         self.active_methods = {m: tk.BooleanVar(value=True) for m in METHOD_COLORS}
 
         self._build_layout()
@@ -152,8 +156,17 @@ class NumericalShowdown(tk.Tk):
         label(fc, "presets:", font=FONT_SMALL, fg=TEXT_MUT).pack(anchor="w", padx=14)
         pf = tk.Frame(fc, bg=CARD)
         pf.pack(fill="x", padx=14, pady=(2, 10))
-        for disp, expr in PRESET_FUNCTIONS:
-            def _set(e=expr): self.func_var.set(e)
+
+        # Preset buttons — each one also loads matching parameters
+        for disp, expr, a, b, x0, x1, eps, alpha in PRESET_FUNCTIONS:
+            def _set(e=expr, _a=a, _b=b, _x0=x0, _x1=x1, _eps=eps, _alpha=alpha):
+                self.func_var.set(e)
+                self.p_a.set(_a)
+                self.p_b.set(_b)
+                self.p_x0.set(_x0)
+                self.p_x1.set(_x1)
+                self.p_eps.set(_eps)
+                self.p_alpha.set(_alpha)
             ghost_btn(pf, disp, _set).pack(anchor="w", pady=1)
 
         # ── Parameters
@@ -228,26 +241,32 @@ class NumericalShowdown(tk.Tk):
             sub_lbl.pack(anchor="w")
             self.stat_cards[method] = (val_lbl, sub_lbl)
 
-        # ── Notebook (tabs)
+        # ── Tab bar + stacked content area
         nb_frame = tk.Frame(main, bg=BG)
         nb_frame.grid(row=1, column=0, sticky="nsew")
-        nb_frame.rowconfigure(0, weight=1)
+        nb_frame.rowconfigure(1, weight=1)
         nb_frame.columnconfigure(0, weight=1)
 
-        self.tab_btns = {}
+        self.tab_btns   = {}
         self.tab_frames = {}
 
         tab_bar = tk.Frame(nb_frame, bg=BG)
-        tab_bar.pack(fill="x")
+        tab_bar.grid(row=0, column=0, sticky="ew")
 
+        # All tab frames share the same grid cell so lift() brings one to front
         self.tab_content = tk.Frame(nb_frame, bg=PANEL,
-                                     highlightbackground=BORDER,
-                                     highlightthickness=1)
-        self.tab_content.pack(fill="both", expand=True)
+                                    highlightbackground=BORDER,
+                                    highlightthickness=1)
+        self.tab_content.grid(row=1, column=0, sticky="nsew")
+        self.tab_content.rowconfigure(0, weight=1)
+        self.tab_content.columnconfigure(0, weight=1)
 
         for tname in ("Convergence Plot", "Function Plot", "Report"):
+            # All frames stacked on top of each other via grid
             frame = tk.Frame(self.tab_content, bg=PANEL)
+            frame.grid(row=0, column=0, sticky="nsew")
             self.tab_frames[tname] = frame
+
             btn = tk.Button(tab_bar, text=tname, font=FONT_BODY,
                             bg=BG, fg=TEXT_MUT, relief="flat",
                             cursor="hand2", padx=14, pady=6,
@@ -255,7 +274,7 @@ class NumericalShowdown(tk.Tk):
             btn.pack(side="left")
             self.tab_btns[tname] = btn
 
-        # Build plot areas
+        # Build plot areas inside each stacked frame
         self._build_convergence_tab(self.tab_frames["Convergence Plot"])
         self._build_function_tab(self.tab_frames["Function Plot"])
         self._build_report_tab(self.tab_frames["Report"])
@@ -263,11 +282,11 @@ class NumericalShowdown(tk.Tk):
         self._show_tab("Convergence Plot")
 
     def _show_tab(self, name):
-        for n, f in self.tab_frames.items():
-            f.pack_forget()
-            self.tab_btns[n].config(fg=TEXT_MUT, bg=BG)
-        self.tab_frames[name].pack(fill="both", expand=True)
-        self.tab_btns[name].config(fg=ACCENT, bg=CARD)
+        """Raise the chosen frame to the top — no pack/forget, no canvas destruction."""
+        for n, btn in self.tab_btns.items():
+            btn.config(fg=TEXT_MUT, bg=BG, activebackground=BG)
+        self.tab_frames[name].lift()
+        self.tab_btns[name].config(fg=ACCENT, bg=PANEL, activebackground=PANEL)
 
     # ── Plot tabs ─────────────────────────────
 
@@ -295,11 +314,13 @@ class NumericalShowdown(tk.Tk):
 
     def _build_convergence_tab(self, frame):
         self.conv_fig = self._make_figure()
-        # Create a 1x2 grid for the two requested plots
-        self.ax_iter = self.conv_fig.add_subplot(121)
-        self.ax_time = self.conv_fig.add_subplot(122)
-        
-        self.conv_fig.subplots_adjust(wspace=0.3, bottom=0.15) # Add space between them
+        self.ax_iter  = self.conv_fig.add_subplot(121)
+        self.ax_time  = self.conv_fig.add_subplot(122)
+        self.conv_fig.subplots_adjust(wspace=0.3, bottom=0.15)
+        self._style_ax(self.ax_iter, title="Error vs Iterations",
+                       xlabel="Iteration", ylabel="log₁₀(error)")
+        self._style_ax(self.ax_time, title="Error vs Time (ms)",
+                       xlabel="Time (ms)", ylabel="")
         self.conv_canvas = self._embed_fig(self.conv_fig, frame)
 
     def _build_function_tab(self, frame):
@@ -368,13 +389,10 @@ class NumericalShowdown(tk.Tk):
                 continue
             t0 = time.perf_counter()
             try:
-                # UNPACK 4 VARIABLES NOW
                 root, iters, history, t_history = run()
-            except Exception as e:
+            except Exception:
                 root, iters, history, t_history = None, 0, [], []
             ms = (time.perf_counter() - t0) * 1000
-            
-            # Save t_history into the results dictionary
             self.results[method] = (root, iters, history, t_history, ms)
 
         self._update_stat_cards()
@@ -393,7 +411,7 @@ class NumericalShowdown(tk.Tk):
                 val_lbl.config(text="—")
                 sub_lbl.config(text="not run", fg=TEXT_DIM)
                 continue
-            
+
             root, iters, _, _, ms = self.results[method]
             if root is None:
                 val_lbl.config(text="FAIL")
@@ -405,39 +423,39 @@ class NumericalShowdown(tk.Tk):
                 sub_lbl.config(text=badge, fg=fg)
 
     def _draw_convergence(self):
-        # Clear both axes
         self.ax_iter.clear()
         self.ax_time.clear()
-        
-        self._style_ax(self.ax_iter, title="Error vs Iterations", xlabel="Iteration", ylabel="log₁₀(error)")
-        self._style_ax(self.ax_time, title="Error vs Time (ms)", xlabel="Time (ms)", ylabel="")
-        
+
+        self._style_ax(self.ax_iter, title="Error vs Iterations",
+                       xlabel="Iteration", ylabel="log₁₀(error)")
+        self._style_ax(self.ax_time, title="Error vs Time (ms)",
+                       xlabel="Time (ms)", ylabel="")
+
         plotted = False
         for method, (root, iters, history, t_history, _) in self.results.items():
             if root is None or not history:
                 continue
-            
+
             safe = [h for h in history if h > 0]
             if safe:
-                log_err = np.log10(safe)
-                
-                # Plot 1: Error vs Iterations
+                log_err  = np.log10(safe)
+                safe_time = t_history[:len(log_err)]
+
                 self.ax_iter.plot(range(1, len(log_err) + 1), log_err,
-                        color=METHOD_COLORS[method], linewidth=1.8, marker="o", markersize=3.5, label=method)
-                
-                # Plot 2: Error vs Time
-                # Ensure t_history matches the length of safe log_err
-                safe_time = t_history[:len(log_err)] 
+                                  color=METHOD_COLORS[method], linewidth=1.8,
+                                  marker="o", markersize=3.5, label=method)
                 self.ax_time.plot(safe_time, log_err,
-                        color=METHOD_COLORS[method], linewidth=1.8, marker="s", markersize=3.5, label=method)
-                
+                                  color=METHOD_COLORS[method], linewidth=1.8,
+                                  marker="s", markersize=3.5, label=method)
                 plotted = True
-                
+
         if plotted:
-            self.ax_iter.legend(facecolor=CARD, edgecolor=BORDER, labelcolor=TEXT, fontsize=8, prop={"family": "Courier New"})
-            self.ax_time.legend(facecolor=CARD, edgecolor=BORDER, labelcolor=TEXT, fontsize=8, prop={"family": "Courier New"})
-            
-        self.conv_canvas.draw()
+            self.ax_iter.legend(facecolor=CARD, edgecolor=BORDER, labelcolor=TEXT,
+                                fontsize=8, prop={"family": "Courier New"})
+            self.ax_time.legend(facecolor=CARD, edgecolor=BORDER, labelcolor=TEXT,
+                                fontsize=8, prop={"family": "Courier New"})
+
+        self.conv_fig.canvas.draw_idle()
 
     def _draw_function(self, f, a, b):
         ax = self.func_ax
@@ -449,7 +467,7 @@ class NumericalShowdown(tk.Tk):
         try:
             ys = np.array([f(x) for x in xs], dtype=float)
         except Exception:
-            self.func_canvas.draw()
+            self.func_fig.canvas.draw_idle()
             return
 
         ax.plot(xs, ys, color=ACCENT2, linewidth=1.8, label="f(x)")
@@ -463,13 +481,11 @@ class NumericalShowdown(tk.Tk):
             except Exception:
                 continue
             ax.plot(root, fy, "o", color=METHOD_COLORS[method],
-                    markersize=9, label=f"{method} root ≈ {root:.4f}",
-                    zorder=5)
+                    markersize=9, label=f"{method} root ≈ {root:.4f}", zorder=5)
 
         ax.legend(facecolor=CARD, edgecolor=BORDER,
-                  labelcolor=TEXT, fontsize=8,
-                  prop={"family": "Courier New"})
-        self.func_canvas.draw()
+                  labelcolor=TEXT, fontsize=8, prop={"family": "Courier New"})
+        self.func_fig.canvas.draw_idle()
 
     def _write_report(self, f):
         rt = self.report_text
@@ -484,7 +500,6 @@ class NumericalShowdown(tk.Tk):
         w("╚══════════════════════════════════════════════════════╝\n\n", "header")
         w(f"  f(x) = {self.func_var.get()}\n\n", "sub")
 
-        # Per-method results
         w("  PERFORMANCE BENCHMARKS\n", "sub")
         w("  " + "─" * 52 + "\n", "muted")
 
@@ -496,7 +511,7 @@ class NumericalShowdown(tk.Tk):
         for method, (root, iters, history, _, ms) in self.results.items():
             w(f"\n  {method}\n", method)
             if root is None:
-                w(f"    ✗ Failed to converge\n", "fail")
+                w("    ✗ Failed to converge\n", "fail")
             else:
                 winner = iters == min_iters
                 tag = "win" if winner else "normal"
@@ -521,7 +536,6 @@ class NumericalShowdown(tk.Tk):
             w("\n  All methods failed to converge on this function.\n"
               "  Try a different interval or initial guess.\n", "fail")
         else:
-            # Check smoothness (heuristic via derivative variation)
             xs_check = np.linspace(-2, 2, 50)
             diffs = []
             for xi in xs_check:
@@ -531,24 +545,24 @@ class NumericalShowdown(tk.Tk):
                     pass
             smooth = (np.std(diffs) < 5) if diffs else True
 
-            newton_ok = "Newton" in successful
+            newton_ok = "Newton"    in successful
             bisect_ok = "Bisection" in successful
-            secant_ok = "Secant"   in successful
+            secant_ok = "Secant"    in successful
 
             if smooth and newton_ok:
-                best = "Newton"
+                best   = "Newton"
                 reason = ("f(x) appears smooth and differentiable — Newton's quadratic\n"
                           "    convergence makes it the optimal choice here.")
             elif secant_ok:
-                best = "Secant"
+                best   = "Secant"
                 reason = ("f(x) may not be ideally smooth — Secant avoids derivative\n"
                           "    computation while achieving superlinear convergence.")
             elif bisect_ok:
-                best = "Bisection"
+                best   = "Bisection"
                 reason = ("Bisection is recommended as the safest fallback: guaranteed\n"
                           "    linear convergence regardless of function properties.")
             else:
-                best = min(successful, key=lambda m: successful[m][1])
+                best   = min(successful, key=lambda m: successful[m][1])
                 reason = "Chosen by fewest iterations among converging methods."
 
             w(f"\n  Recommended → ", "normal")
